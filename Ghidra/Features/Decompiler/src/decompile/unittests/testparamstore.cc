@@ -409,4 +409,53 @@ TEST(paramstore_aarch64_cdecl) {
   ASSERT(theEnviron.test(model, "void func(doublequad);", "void,join d3 d2 d1 d0"));
 }
 
+
+TEST(flowblock_edgelabel_duality)
+
+{
+  BlockGraph graph;
+  FlowBlock *b0 = graph.newBlock();
+  FlowBlock *b0b = graph.newBlock();
+  FlowBlock *b1 = graph.newBlock();
+  FlowBlock *b2 = graph.newBlock();
+  FlowBlock *b2b = graph.newBlock();
+  graph.addEdge(b0, b1);
+  graph.addEdge(b0b, b1);
+  graph.addEdge(b1, b2);
+  graph.addEdge(b1, b2b);
+  b0->setGotoBranch(0);
+  ASSERT(b0->isGotoOut(0));
+  ASSERT(b1->isGotoIn(0));
+
+  // Redirect b0 -> b1 -> b2 to b0 -> b2 via removeFromFlowSplit (replaceEdgesThru)
+  graph.removeFromFlowSplit(b1, false);
+  ASSERT(b0->isGotoOut(0));
+  ASSERT(b2->isGotoIn(0));
+
+  // Collapse {m0, m1} with two outgoing edges to b3 (second is goto) via eliminateOutDups
+  FlowBlock *m0 = graph.newBlock();
+  FlowBlock *m1 = graph.newBlock();
+  FlowBlock *b3 = graph.newBlock();
+  graph.addEdge(m0, m1);
+  graph.addEdge(m0, b3);
+  graph.addEdge(m1, b3);
+  m1->setGotoBranch(0);
+  FlowBlock *ifbl = graph.newBlockIf(m0, m1);
+  ASSERT(ifbl->isGotoOut(0));
+  ASSERT(b3->isGotoIn(0));
+
+  // Collapse {n0, n1} with two incoming edges from b0 (second is goto) via eliminateInDups
+  FlowBlock *n0 = graph.newBlock();
+  FlowBlock *n1 = graph.newBlock();
+  graph.addEdge(b0, n0);
+  graph.addEdge(b0, n1);
+  b0->setGotoBranch(2);
+  vector<FlowBlock *> inNodes;
+  inNodes.push_back(n0);
+  inNodes.push_back(n1);
+  FlowBlock *listbl = graph.newBlockList(inNodes);
+  ASSERT(listbl->isGotoIn(0));
+  ASSERT(b0->isGotoOut(1));
+}
+
 }

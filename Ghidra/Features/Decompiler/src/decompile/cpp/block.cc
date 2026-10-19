@@ -206,8 +206,12 @@ void FlowBlock::replaceEdgesThru(int4 in,int4 out)
   int4 inblock_outslot = intothis[in].reverse_index;
   FlowBlock *outb = outofthis[out].point;
   int4 outblock_inslot = outofthis[out].reverse_index;
+  // Sync labels for checkEdges(); caller Funcdata::removeFromFlowSplit immediately calls structureReset()
+  uint4 lab = inb->outofthis[inblock_outslot].label | outb->intothis[outblock_inslot].label;
+  inb->outofthis[inblock_outslot].label = lab;
   inb->outofthis[inblock_outslot].point = outb;
   inb->outofthis[inblock_outslot].reverse_index = outblock_inslot;
+  outb->intothis[outblock_inslot].label = lab;
   outb->intothis[outblock_inslot].point = inb;
   outb->intothis[outblock_inslot].reverse_index = inblock_outslot;
   halfDeleteInEdge(in);
@@ -461,6 +465,7 @@ void FlowBlock::eliminateInDups(FlowBlock *bl)
       }
       else {
 	intothis[indval].label |= intothis[i].label;
+	bl->outofthis[intothis[indval].reverse_index].label |= intothis[i].label;
 	int4 rev = intothis[i].reverse_index;
 	halfDeleteInEdge(i);
 	bl->halfDeleteOutEdge(rev);
@@ -490,6 +495,7 @@ void FlowBlock::eliminateOutDups(FlowBlock *bl)
       }
       else {
 	outofthis[indval].label |= outofthis[i].label;
+	bl->intothis[outofthis[indval].reverse_index].label |= outofthis[i].label;
 	int4 rev = outofthis[i].reverse_index;
 	halfDeleteOutEdge(i);
 	bl->halfDeleteInEdge(rev);
@@ -560,6 +566,8 @@ void FlowBlock::checkEdges(void)
       throw LowlevelError("Intothis edge mismatch");
     if (edger.reverse_index != i)
       throw LowlevelError("Intothis index mismatch");
+    if (edger.label != edge.label)
+      throw LowlevelError("Intothis label mismatch");
   }
   for(int4 i=0;i<outofthis.size();++i) {
     BlockEdge &edge( outofthis[i] );
@@ -572,6 +580,8 @@ void FlowBlock::checkEdges(void)
       throw LowlevelError("Outofthis edge mismatch");
     if (edger.reverse_index != i)
       throw LowlevelError("Outofthis index mismatch");
+    if (edger.label != edge.label)
+      throw LowlevelError("Outofthis label mismatch");
   }
 }
 
@@ -1583,7 +1593,7 @@ void BlockGraph::removeFromFlowSplit(FlowBlock *bl,bool flipflow)
 #ifdef BLOCKCONSISTENT_DEBUG
   if (bl->parent != this)
     throw LowlevelError("Bad remove from flow split");
-  if ((bl->sizeIn()!=2)&&(bl->sizeOut()!=2))
+  if ((bl->sizeIn()!=2)||(bl->sizeOut()!=2))
     throw LowlevelError("Illegal remove from flow split");
 #endif
   if (flipflow)
