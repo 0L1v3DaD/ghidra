@@ -1192,6 +1192,8 @@ bool HighIntersectTest::intersection(HighVariable *a,HighVariable *b)
     if (iter != highedgemap.end()) // If previous test is present
       return (*iter).second;	// Use it
   }
+  if (!a->getCover().hasSharedBlock(b->getCover()) && (a->isAddrTied() == b->isAddrTied()))
+    return false;
 
   bool res = false;
   int4 blk;
@@ -1212,6 +1214,8 @@ bool HighIntersectTest::intersection(HighVariable *a,HighVariable *b)
       else
 	res = testUntiedCallIntersection(b,a);
     }
+    else if (blockisect.empty())
+      return false;
   }
   highedgemap[ HighEdge(a,b) ] = res; // Cache the result
   highedgemap[ HighEdge(b,a) ] = res;
