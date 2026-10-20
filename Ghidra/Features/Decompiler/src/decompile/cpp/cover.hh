@@ -107,10 +107,21 @@ public:
 /// Internally this is implemented as a map from basic block to their non-empty CoverBlock
 class Cover {
   map<int4,CoverBlock> cover; 			///< block index -> CoverBlock
+  uint8 blockMask = 0;				///< 64-bit Bloom summary of covered block indices (index mod 64)
+  int4 minBlock = 1000000;			///< Minimum covered block index (1000000 if empty)
+  int4 maxBlock = -1;				///< Maximum covered block index (-1 if empty)
+  void recordBlock(int4 blk) {
+    blockMask |= ((uint8)1 << ((uint4)blk & 63));
+    if (blk < minBlock) minBlock = blk;
+    if (blk > maxBlock) maxBlock = blk;
+  }
   static const CoverBlock emptyBlock;		///< Global empty CoverBlock for blocks not covered by \b this
   void addRefRecurse(const FlowBlock *bl);	///< Fill-in \b this recursively from the given block
 public:
-  void clear(void) { cover.clear(); }		///< Clear \b this to an empty Cover
+  void clear(void) { cover.clear(); blockMask = 0; minBlock = 1000000; maxBlock = -1; }	///< Clear \b this to an empty Cover
+  bool hasSharedBlock(const Cover &op2) const {
+    return ((blockMask & op2.blockMask) != 0) && (maxBlock >= op2.minBlock) && (op2.maxBlock >= minBlock);
+  }
   int4 compareTo(const Cover &op2) const;	///< Give ordering of \b this and another Cover
   const CoverBlock &getCoverBlock(int4 i) const;	///< Get the CoverBlock corresponding to the i-th block
   int4 intersect(const Cover &op2) const;	///< Characterize the intersection between \b this and another Cover.

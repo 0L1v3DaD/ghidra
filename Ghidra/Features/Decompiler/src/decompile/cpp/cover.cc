@@ -225,17 +225,8 @@ int4 Cover::compareTo(const Cover &op2) const
 {
   int4 a,b;
 
-  map<int4,CoverBlock>::const_iterator iter;
-  iter = cover.begin();
-  if (iter==cover.end())
-    a = 1000000;
-  else
-    a = (*iter).first;
-  iter = op2.cover.begin();
-  if (iter==op2.cover.end())
-    b = 1000000;
-  else
-    b = (*iter).first;
+  a = minBlock;
+  b = op2.minBlock;
 
   if ( a < b ) {
 	return -1;
@@ -253,6 +244,8 @@ int4 Cover::compareTo(const Cover &op2) const
 const CoverBlock &Cover::getCoverBlock(int4 i) const
 
 {
+  if (i < minBlock || i > maxBlock || (blockMask & ((uint8)1 << ((uint4)i & 63))) == 0)
+    return emptyBlock;
   map<int4,CoverBlock>::const_iterator iter = cover.find(i);
   if (iter == cover.end())
     return emptyBlock;
@@ -269,6 +262,7 @@ const CoverBlock &Cover::getCoverBlock(int4 i) const
 int4 Cover::intersect(const Cover &op2) const
 
 {
+  if (!hasSharedBlock(op2)) return 0;
   map<int4,CoverBlock>::const_iterator iter,iter2;
   int4 res,newres;
 
@@ -311,6 +305,7 @@ void Cover::intersectList(vector<int4> &listout,const Cover &op2,int4 level) con
   int4 val;
 
   listout.clear();
+  if (!hasSharedBlock(op2)) return;
 
   iter = cover.begin();
   iter2 = op2.cover.begin();
@@ -392,6 +387,7 @@ bool Cover::intersect(const PcodeOpSet &opSet,Varnode *rep) const
 int4 Cover::intersectByBlock(int4 blk,const Cover &op2) const
 
 {
+  if (blk < minBlock || blk > maxBlock || blk < op2.minBlock || blk > op2.maxBlock || (((blockMask & op2.blockMask) & ((uint8)1 << ((uint4)blk & 63))) == 0)) return 0;
   map<int4,CoverBlock>::const_iterator iter;
 
   iter = cover.find(blk);
@@ -414,8 +410,10 @@ bool Cover::contain(const PcodeOp *op,int4 max) const
 
 {
   map<int4,CoverBlock>::const_iterator iter;
+  int4 blk = op->getParent()->getIndex();
+  if (blk < minBlock || blk > maxBlock || (blockMask & ((uint8)1 << ((uint4)blk & 63))) == 0) return false;
 
-  iter = cover.find(op->getParent()->getIndex());
+  iter = cover.find(blk);
   if (iter == cover.end()) return false;
   if ((*iter).second.contain(op)) {
     if (max==1) return true;
@@ -450,6 +448,7 @@ int4 Cover::containVarnodeDef(const Varnode *vn) const
   }
   else
     blk = op->getParent()->getIndex();
+  if (blk < minBlock || blk > maxBlock || (blockMask & ((uint8)1 << ((uint4)blk & 63))) == 0) return 0;
   map<int4,CoverBlock>::const_iterator iter = cover.find(blk);
   if (iter == cover.end()) return 0;
   if ((*iter).second.contain(op)) {
@@ -467,6 +466,9 @@ void Cover::merge(const Cover &op2)
 {
   map<int4,CoverBlock>::const_iterator iter;
 
+  blockMask |= op2.blockMask;
+  if (op2.minBlock < minBlock) minBlock = op2.minBlock;
+  if (op2.maxBlock > maxBlock) maxBlock = op2.maxBlock;
   for(iter=op2.cover.begin();iter!=op2.cover.end();++iter)
     cover[(*iter).first].merge((*iter).second);
 }
@@ -503,18 +505,21 @@ void Cover::addDefPoint(const Varnode *vn)
 {
   const PcodeOp *def;
 
-  cover.clear();
+  clear();
 
   def = vn->getDef();
   if (def != (const PcodeOp *)0) {
-    CoverBlock &block( cover[def->getParent()->getIndex() ] );
+    int4 blk = def->getParent()->getIndex();
+    CoverBlock &block( cover[blk] );
     block.setBegin(def);	// Set the point topology
     block.setEnd(def);
+    recordBlock(blk);
   }
   else if (vn->isInput()) {
     CoverBlock &block( cover[0] );
     block.setBegin( (const PcodeOp *)2 ); // Special mark for input
     block.setEnd( (const PcodeOp *)2 );
+    recordBlock(0);
   }
 }
 
@@ -527,7 +532,9 @@ void Cover::addRefRecurse(const FlowBlock *bl)
   int4 j;
   uintm ustart,ustop;
 
-  CoverBlock &block(cover[bl->getIndex()]);
+  int4 blk = bl->getIndex();
+  recordBlock(blk);
+  CoverBlock &block(cover[blk]);
   if (block.empty()) {
     block.setAll();		// No cover encountered, fill in entire block
     //    if (bl->InSize()==0)
@@ -570,7 +577,9 @@ void Cover::addRefPoint(const PcodeOp *ref,const Varnode *vn)
   uintm ustop;
 
   bl = ref->getParent();
-  CoverBlock &block(cover[bl->getIndex()]);
+  int4 blk = bl->getIndex();
+  recordBlock(blk);
+  CoverBlock &block(cover[blk]);
   if (block.empty()) {
     block.setEnd(ref);
   }
