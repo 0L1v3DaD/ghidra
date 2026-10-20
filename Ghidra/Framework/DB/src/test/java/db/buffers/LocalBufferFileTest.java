@@ -309,7 +309,9 @@ public class LocalBufferFileTest extends AbstractGenericTest {
 
 	private void checkData(byte[] data, byte b) {
 		assertEquals(BUFFER_SIZE, data.length);
-
+		for (int i = 0; i < data.length; i++) {
+			assertEquals(b, data[i]);
+		}
 	}
 
 }

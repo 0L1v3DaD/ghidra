@@ -127,6 +127,15 @@ public class LocalBufferFile implements BufferFile {
 	 * The random-access object for the underlying file.
 	 */
 	private RandomAccessFile raf;
+	private final byte[] prefixBuf = new byte[BUFFER_PREFIX_SIZE];
+	private byte[] blockIoBuf;
+
+	private byte[] getBlockIoBuf() {
+		if (blockIoBuf == null || blockIoBuf.length < blockSize) {
+			blockIoBuf = new byte[blockSize];
+		}
+		return blockIoBuf;
+	}
 
 	/**
 	 * Provides a handle to the active OutputBlockStream used to update file via this class's
@@ -541,15 +550,14 @@ public class LocalBufferFile implements BufferFile {
 			// Push index on stack
 			freeIndexList.add(nextIndex);
 
-			// Read block to get next index
+			// Read block to get next index in a single 5-byte read syscall
 			seekBufferBlock(nextIndex);
-
-			// Read version 1 buffer prefix and next empty index
-			byte flags = raf.readByte();
+			raf.readFully(prefixBuf, 0, BUFFER_PREFIX_SIZE);
+			byte flags = prefixBuf[0];
 			if ((flags & EMPTY_BUFFER) == 0) {
 				throw new IOException("Corrupt file");
 			}
-			nextIndex = raf.readInt();
+			nextIndex = BigEndianDataConverter.INSTANCE.getInt(prefixBuf, 1);
 		}
 
 		int[] newFreeIndexes = new int[freeIndexList.size()];
@@ -576,11 +584,11 @@ public class LocalBufferFile implements BufferFile {
 			++bufferCount;
 		}
 
-		// Write version 1 buffer prefix
+		// Write version 1 buffer prefix in a single 5-byte write syscall
 		seekBufferBlock(index);
-
-		raf.writeByte(EMPTY_BUFFER);
-		raf.writeInt(nextFreeIndex);
+		prefixBuf[0] = EMPTY_BUFFER;
+		BigEndianDataConverter.INSTANCE.putInt(prefixBuf, 1, nextFreeIndex);
+		raf.write(prefixBuf, 0, BUFFER_PREFIX_SIZE);
 	}
 
 	/**
@@ -656,11 +664,10 @@ public class LocalBufferFile implements BufferFile {
 
 		seekBufferBlock(index);
 
-		// Read version 1 buffer prefix
-		byte flags = raf.readByte();
-
-		// Read buffer ID
-		buf.setId(raf.readInt());
+		// Read 5-byte version 1 buffer prefix and buffer ID in a single read syscall
+		raf.readFully(prefixBuf, 0, BUFFER_PREFIX_SIZE);
+		byte flags = prefixBuf[0];
+		buf.setId(BigEndianDataConverter.INSTANCE.getInt(prefixBuf, 1));
 
 		if ((flags & EMPTY_BUFFER) != 0) {
 			buf.setEmpty(true);
@@ -706,17 +713,18 @@ public class LocalBufferFile implements BufferFile {
 
 		seekBufferBlock(index);
 
-		// Write block
+		// Coalesce prefix and payload into a single write syscall
 		if (empty) {
-			raf.writeByte(EMPTY_BUFFER); // Empty flag only
-			raf.writeInt(buf.getId()); // ID
+			prefixBuf[0] = EMPTY_BUFFER;
+			BigEndianDataConverter.INSTANCE.putInt(prefixBuf, 1, buf.getId());
+			raf.write(prefixBuf, 0, BUFFER_PREFIX_SIZE);
 		}
 		else {
-			raf.writeByte(0); // Clear Flags
-			raf.writeInt(buf.getId()); // ID
-
-			// Write data
-			raf.write(data, 0, bufferSize);
+			byte[] ioBuf = getBlockIoBuf();
+			ioBuf[0] = 0;
+			BigEndianDataConverter.INSTANCE.putInt(ioBuf, 1, buf.getId());
+			System.arraycopy(data, 0, ioBuf, BUFFER_PREFIX_SIZE, bufferSize);
+			raf.write(ioBuf, 0, blockSize);
 		}
 
 		if (index >= bufferCount) {
@@ -747,7 +755,7 @@ public class LocalBufferFile implements BufferFile {
 			throw new IOException("File is read-only");
 		}
 
-		long size = (indexCount + 1) * blockSize;
+		long size = (long) (indexCount + 1) * (long) blockSize;
 		raf.setLength(size);
 		this.bufferCount = indexCount;
 	}
