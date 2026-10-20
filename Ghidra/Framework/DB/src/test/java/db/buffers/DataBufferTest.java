@@ -106,6 +106,34 @@ public class DataBufferTest extends AbstractGenericTest {
 		transferData(false);
 	}
 
+	@Test
+	public void testPrimitiveAccessors() {
+		DataBuffer buf = new DataBuffer(1024);
+		buf.putShort(0, (short) 0x0102);
+		assertEquals(1, buf.getByte(0));
+		assertEquals(2, buf.getByte(1));
+		buf.putInt(0, 0x01020304);
+		assertEquals(1, buf.getByte(0));
+		assertEquals(2, buf.getByte(1));
+		assertEquals(3, buf.getByte(2));
+		assertEquals(4, buf.getByte(3));
+		buf.putLong(0, 0x0102030405060708L);
+		for (int i = 0; i < 8; i++) {
+			assertEquals(i + 1, buf.getByte(i));
+		}
+		for (int off = 0; off <= 1016; off++) {
+			short sv = (short) (0xA500 ^ (off * 37));
+			buf.putShort(off, sv);
+			assertEquals(sv, buf.getShort(off));
+			int iv = 0x89ABCDEF ^ (off * 0x10203);
+			buf.putInt(off, iv);
+			assertEquals(iv, buf.getInt(off));
+			long lv = 0xFEDCBA9876543210L ^ ((long) off * 0x100010001L);
+			buf.putLong(off, lv);
+			assertEquals(lv, buf.getLong(off));
+		}
+	}
+
 	private class MyObjectInput implements ObjectInput {
 
 		private final int serialDataLen;

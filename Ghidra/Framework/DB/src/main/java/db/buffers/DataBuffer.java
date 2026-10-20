@@ -16,6 +16,9 @@
 package db.buffers;
 
 import java.io.*;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.zip.*;
 
@@ -28,6 +31,13 @@ import db.Buffer;
 public class DataBuffer implements Buffer, Externalizable {
 
 	public static final long serialVersionUID = 3L;
+
+	private static final VarHandle SHORT_VH =
+		MethodHandles.byteArrayViewVarHandle(short[].class, ByteOrder.BIG_ENDIAN);
+	private static final VarHandle INT_VH =
+		MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.BIG_ENDIAN);
+	private static final VarHandle LONG_VH =
+		MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.BIG_ENDIAN);
 
 	public static final String COMPRESSED_SERIAL_OUTPUT_PROPERTY =
 		"db.buffers.DataBuffer.compressedOutput";
@@ -179,21 +189,17 @@ public class DataBuffer implements Buffer, Externalizable {
 
 	@Override
 	public int getInt(int offset) {
-		return ((data[offset] & 0xff) << 24) | ((data[++offset] & 0xff) << 16) |
-			((data[++offset] & 0xff) << 8) | (data[++offset] & 0xff);
+		return (int) INT_VH.get(data, offset);
 	}
 
 	@Override
 	public short getShort(int offset) {
-		return (short) (((data[offset] & 0xff) << 8) | (data[++offset] & 0xff));
+		return (short) SHORT_VH.get(data, offset);
 	}
 
 	@Override
 	public long getLong(int offset) {
-		return (((long) data[offset] & 0xff) << 56) | (((long) data[++offset] & 0xff) << 48) |
-			(((long) data[++offset] & 0xff) << 40) | (((long) data[++offset] & 0xff) << 32) |
-			(((long) data[++offset] & 0xff) << 24) | (((long) data[++offset] & 0xff) << 16) |
-			(((long) data[++offset] & 0xff) << 8) | ((long) data[++offset] & 0xff);
+		return (long) LONG_VH.get(data, offset);
 	}
 
 	@Override
@@ -220,33 +226,22 @@ public class DataBuffer implements Buffer, Externalizable {
 	@Override
 	public int putInt(int offset, int v) {
 		dirty = true;
-		data[offset] = (byte) (v >> 24);
-		data[++offset] = (byte) (v >> 16);
-		data[++offset] = (byte) (v >> 8);
-		data[++offset] = (byte) v;
-		return ++offset;
+		INT_VH.set(data, offset, v);
+		return offset + 4;
 	}
 
 	@Override
 	public int putShort(int offset, short v) {
 		dirty = true;
-		data[offset] = (byte) (v >> 8);
-		data[++offset] = (byte) v;
-		return ++offset;
+		SHORT_VH.set(data, offset, v);
+		return offset + 2;
 	}
 
 	@Override
 	public int putLong(int offset, long v) {
 		dirty = true;
-		data[offset] = (byte) (v >> 56);
-		data[++offset] = (byte) (v >> 48);
-		data[++offset] = (byte) (v >> 40);
-		data[++offset] = (byte) (v >> 32);
-		data[++offset] = (byte) (v >> 24);
-		data[++offset] = (byte) (v >> 16);
-		data[++offset] = (byte) (v >> 8);
-		data[++offset] = (byte) v;
-		return ++offset;
+		LONG_VH.set(data, offset, v);
+		return offset + 8;
 	}
 
 	/**
