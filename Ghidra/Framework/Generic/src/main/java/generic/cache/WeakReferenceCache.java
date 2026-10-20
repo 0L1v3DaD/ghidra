@@ -18,26 +18,27 @@ package generic.cache;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-
-import org.apache.commons.collections4.map.LRUMap;
 
 /**
  * Generic cache implementation that removes items from the cache when they are no longer
  * referenced. It uses weak references for the values and a small hard cache
  * so that recent items don't get garbage collected immediately.
  * <P>
- * This class is thread safe. All public methods are synchronized.
+ * This class is thread safe.
  * 
- * @param <K> The type of the object stored in this cache
- * @param <V> The type of the object stored in this cache
+ * @param <K> The type of the key stored in this cache
+ * @param <V> The type of the value stored in this cache
  */
 public class WeakReferenceCache<K, V> {
 
-	private Map<K, KeyedReference<K, V>> refsById;
-	private ReferenceQueue<V> refQueue;
-	private LRUMap<K, V> hardCache;
+	private final ConcurrentHashMap<K, KeyedReference<K, V>> refsById;
+	private final ReferenceQueue<V> refQueue;
+	private volatile HardRing<V> hardRing;
 
 	/**
 	 * Constructs a new WeakReferenceCache with a given hard cache size.  The hard cache size is
@@ -46,10 +47,12 @@ public class WeakReferenceCache<K, V> {
 	 * @param hardCacheSize the minimum number of objects to keep in the cache.
 	 */
 	public WeakReferenceCache(int hardCacheSize) {
-		refsById = new HashMap<>();
+		if (hardCacheSize <= 0) {
+			throw new IllegalArgumentException("Hard cache size must be at least 1");
+		}
+		refsById = new ConcurrentHashMap<>();
 		refQueue = new ReferenceQueue<>();
-
-		hardCache = new LRUMap<>(hardCacheSize);
+		hardRing = new HardRing<>(hardCacheSize);
 	}
 
 	/**
@@ -57,17 +60,20 @@ public class WeakReferenceCache<K, V> {
 	 * @param key the key of the object to retrieve.
 	 * @return the cached object or null if the object with that key is not currently cached.
 	 */
-	public synchronized V get(K key) {
+	public V get(K key) {
+		if (key == null) {
+			return null;
+		}
 		KeyedReference<K, V> ref = refsById.get(key);
 		if (ref == null) {
 			return null;
 		}
 		V v = ref.get();
 		if (v == null) {
-			refsById.remove(key);
+			refsById.remove(key, ref);
 			return null;
 		}
-		hardCache.put(key, v);
+		hardRing.recordAccess(ref, v);
 		return v;
 	}
 
@@ -75,7 +81,7 @@ public class WeakReferenceCache<K, V> {
 	 * Returns the number of objects currently in the cache.
 	 * @return the number of objects currently in the cache.
 	 */
-	public synchronized int size() {
+	public int size() {
 		return refsById.size();
 	}
 
@@ -84,8 +90,10 @@ public class WeakReferenceCache<K, V> {
 	 * @param size the minimum number of objects to keep in the cache.
 	 */
 	public synchronized void setHardCacheSize(int size) {
-		hardCache.clear();
-		hardCache = new LRUMap<>(size);
+		if (size <= 0) {
+			throw new IllegalArgumentException("Hard cache size must be at least 1");
+		}
+		hardRing = new HardRing<>(size);
 	}
 
 	/**
@@ -96,9 +104,19 @@ public class WeakReferenceCache<K, V> {
 	 */
 	public synchronized V add(K key, V data) {
 		processQueue();
-		hardCache.put(key, data);
+		if (key == null || data == null) {
+			return data;
+		}
 		KeyedReference<K, V> ref = new KeyedReference<>(key, data, refQueue);
-		refsById.put(key, ref);
+		hardRing.pinNew(ref, data);
+		KeyedReference<K, V> oldRef = refsById.put(key, ref);
+		if (oldRef != null && oldRef != ref) {
+			V oldVal = oldRef.get();
+			if (oldVal != null && oldVal != data) {
+				hardRing.unpin(oldRef, oldVal);
+			}
+			oldRef.clear();
+		}
 		return data;
 	}
 
@@ -106,7 +124,7 @@ public class WeakReferenceCache<K, V> {
 	 * Returns an List of all the cached objects.
 	 * @return an List of all the cached objects.
 	 */
-	public synchronized List<V> getCachedObjects() {
+	public List<V> getCachedObjects() {
 		List<V> list = new ArrayList<>();
 		processQueue();
 		for (KeyedReference<K, V> ref : refsById.values()) {
@@ -122,7 +140,7 @@ public class WeakReferenceCache<K, V> {
 	 * Applies the given consumer to all values in the cache.
 	 * @param consumer the consumer to apply to all values in the cache
 	 */
-	public synchronized void apply(Consumer<V> consumer) {
+	public void apply(Consumer<V> consumer) {
 		processQueue();
 		for (KeyedReference<K, V> ref : refsById.values()) {
 			V v = ref.get();
@@ -139,22 +157,32 @@ public class WeakReferenceCache<K, V> {
 	 */
 	public synchronized V delete(K key) {
 		processQueue();
+		if (key == null) {
+			return null;
+		}
 		KeyedReference<K, V> ref = refsById.remove(key);
 		V v = null;
 		if (ref != null) {
 			v = ref.get();
+			if (v != null) {
+				hardRing.unpin(ref, v);
+			}
 			ref.clear();
 		}
 		return v;
 	}
 
 	public synchronized void deleteIf(Predicate<V> predicate) {
-		Iterator<KeyedReference<K, V>> iterator = refsById.values().iterator();
-		while (iterator.hasNext()) {
-			KeyedReference<K, V> ref = iterator.next();
+		processQueue();
+		for (KeyedReference<K, V> ref : refsById.values()) {
 			V v = ref.get();
 			if (v == null || predicate.test(v)) {
-				iterator.remove();
+				if (refsById.remove(ref.getKey(), ref)) {
+					if (v != null) {
+						hardRing.unpin(ref, v);
+					}
+					ref.clear();
+				}
 			}
 		}
 	}
@@ -165,20 +193,57 @@ public class WeakReferenceCache<K, V> {
 		KeyedReference<K, V> ref;
 		while ((ref = (KeyedReference<K, V>) refQueue.poll()) != null) {
 			K key = ref.getKey();
-			KeyedReference<K, V> oldValue = refsById.remove(key);
+			refsById.remove(key, ref);
+		}
+	}
 
-			if (oldValue != null && oldValue != ref) {
-				// we have put another item in the cache with the same key.  Further, we
-				// removed the item, but the garbage collector had not put the item on the
-				// reference queue until after we added a new reference to the cache.
-				// We want to keep the last value that was added, as it has not been deleted.
-				refsById.put(key, oldValue);
+	private static final class HardRing<V> {
+		private final AtomicReferenceArray<V> ring;
+		private final int capacity;
+		private final AtomicInteger cursor = new AtomicInteger();
+
+		HardRing(int capacity) {
+			this.capacity = capacity;
+			this.ring = new AtomicReferenceArray<>(capacity);
+		}
+
+		void pinNew(KeyedReference<?, V> ref, V v) {
+			if (ref.slot == -2) {
+				return;
+			}
+			int nextSlot = Integer.remainderUnsigned(cursor.getAndIncrement(), capacity);
+			ring.lazySet(nextSlot, v);
+			ref.slot = nextSlot;
+			if (ref.deleted) {
+				ring.compareAndSet(nextSlot, v, null);
+			}
+		}
+
+		void recordAccess(KeyedReference<?, V> ref, V v) {
+			if (ref.deleted) {
+				return;
+			}
+			int oldSlot = ref.slot;
+			if (oldSlot >= 0 && oldSlot < capacity && ring.get(oldSlot) == v) {
+				return;
+			}
+			pinNew(ref, v);
+		}
+
+		void unpin(KeyedReference<?, V> ref, V v) {
+			ref.deleted = true;
+			int slot = ref.slot;
+			ref.slot = -2;
+			if (slot >= 0 && slot < capacity) {
+				ring.compareAndSet(slot, v, null);
 			}
 		}
 	}
 
 	private static class KeyedReference<K, V> extends WeakReference<V> {
-		private K key;
+		private final K key;
+		volatile int slot = -1;
+		volatile boolean deleted = false;
 
 		KeyedReference(K key, V obj, ReferenceQueue<V> queue) {
 			super(obj, queue);
