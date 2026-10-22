@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 #include "architecture.hh"
+#include "coreaction.hh"
+#include "ruleaction.hh"
 #include "grammar.hh"
 #include "test.hh"
 #include <iostream>
@@ -677,6 +679,57 @@ TEST(funcproto_recovermixedmeta)
   ASSERT(paramActive.getTrial(4).isUnref());
   ASSERT(!paramActive.getTrial(4).isUsed());
   ASSERT(register_used(paramActive.getTrial(5),"r10"))
+}
+
+TEST(funclink_locked_no_storage)
+
+{
+  FuncProtoTestEnvironment::build();
+  Address entryAddr(glb->getDefaultCodeSpace(), 0x1000);
+  Scope *globalScope = glb->symboltab->getGlobalScope();
+  FunctionSymbol *fsym = globalScope->addFunction(entryAddr, "caller_9937");
+  Funcdata *fd = fsym->getFunction();
+
+  PcodeOp *callOp = fd->newOp(2, entryAddr);
+  fd->opSetOpcode(callOp, CPUI_CALL);
+  fd->opSetInput(callOp, fd->newConstant(4, 0x2000), 0);
+  VarnodeData r12 = glb->translate->getRegister("r12");
+  fd->opSetInput(callOp, fd->newVarnode(4, r12.getAddr()), 1);
+
+  ProtoModel *model = getModel("__model1");
+  FuncCallSpecs fc(callOp);
+  fc.setInternal(model, glb->types->getTypeVoid());
+  fc.initActiveInput();
+  fc.getActiveInput()->registerTrial(r12.getAddr(), 4);
+  fc.getActiveInput()->getTrial(0).markActive();
+
+  FuncProto fp;
+  fp.setInternal(model, glb->types->getTypeVoid());
+  ParameterPieces p0;
+  p0.type = glb->types->getBase(1, TYPE_UINT);
+  p0.flags = ParameterPieces::typelock;
+  fp.setParam(0, "zst", p0);
+  ParameterPieces p1;
+  p1.addr = r12.getAddr();
+  p1.type = glb->types->getBase(4, TYPE_UINT);
+  p1.flags = ParameterPieces::typelock;
+  fp.setParam(1, "arg1", p1);
+  fp.setInputLock(true);
+  fp.setDotdotdot(true);
+
+  fc.forceSet(*fd, fp);
+  ASSERT_EQUALS(fc.getActiveInput()->getNumTrials(), 1);
+  ASSERT(fc.getActiveInput()->getTrial(0).isActive());
+
+  TypeArray *arrType = glb->types->getTypeArray(2, glb->types->getBase(4, TYPE_UINT));
+  PcodeOp *zextOp = fd->newOp(1, entryAddr);
+  fd->opSetOpcode(zextOp, CPUI_INT_ZEXT);
+  Varnode *outVn = fd->newUniqueOut(4, zextOp);
+  outVn->updateType(arrType, true, true);
+  fd->opSetInput(zextOp, fd->newConstant(1, 0), 0);
+  RulePieceStructure rulePiece("piecestruct");
+  ASSERT_EQUALS(rulePiece.applyOp(zextOp, *fd), 0);
+  globalScope->removeSymbol(fsym);
 }
 
 } // End namespace ghidra

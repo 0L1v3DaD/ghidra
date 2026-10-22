@@ -7378,7 +7378,7 @@ Datatype *RulePieceStructure::determineDatatype(Varnode *vn,int4 &baseOffset)
 
   if (ct->getSize() != vn->getSize()) {			// vn is a partial
     SymbolEntry *entry = vn->getSymbolEntry();
-    if (!entry->isMapEntry())
+    if (entry == (SymbolEntry *)0 || !entry->isMapEntry())
       return (Datatype *)0;
     baseOffset = vn->getAddr().overlap(0,((MapEntry *)entry)->getAddr(),ct->getSize());
     if (baseOffset < 0)
