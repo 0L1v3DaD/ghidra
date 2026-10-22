@@ -12,7 +12,11 @@ ec83e80148988b1485001010008b45ec
 fc0475098b45f889057b0f0000905dc3
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="myloop"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+f30f6f0ff20f79c1660f73d80c660f7f06c3
+</bytechunk>
 <symbol space="ram" offset="0x10004f" name="myglob"/>
+<symbol space="ram" offset="0x100100" name="wide_shr_consume"/>
 </binaryimage>
 <script>
   <com>map addr r0x101000 int4 myarr[2]</com>
@@ -23,6 +27,9 @@ fc0475098b45f889057b0f0000905dc3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu myglob</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide_shr_consume</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -41,4 +48,5 @@ fc0475098b45f889057b0f0000905dc3
                                                    globvar = param_2 \+ 7;</stringmatch>
 <stringmatch name="Copy trim #8" min="1" max="1">if \(param_1 == 4\) \{
                                                    globvar = param_2;</stringmatch>
+<stringmatch name="Copy trim #9" min="1" max="1">axVar1 = \*param_1;</stringmatch>
 </decompilertest>
