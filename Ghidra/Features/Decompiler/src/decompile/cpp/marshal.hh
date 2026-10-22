@@ -554,6 +554,7 @@ private:
   list<ByteChunk> inStream;		///< Incoming raw data as a sequence of byte arrays
   Position startPos;			///< Position at the start of the current open element
   Position curPos;			///< Position of the next attribute as returned by getNextAttributeId
+  Position lookupPos;			///< Position of the next attribute for findMatchingAttribute
   Position endPos;			///< Ending position after all attributes in current open element
   bool attributeRead;			///< Has the last attribute returned by getNextAttributeId been read
   uint1 getByte(Position &pos) { return *pos.current; }	///< Get the byte at the current position, do not advance
