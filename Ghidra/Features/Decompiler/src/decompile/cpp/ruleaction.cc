@@ -1137,7 +1137,9 @@ void RuleNotDistribute::getOpList(vector<uint4> &oplist) const
 int4 RuleNotDistribute::applyOp(PcodeOp *op,Funcdata &data)
 
 {
-  PcodeOp *compop = op->getIn(0)->getDef();
+  Varnode *vnIn = op->getIn(0);
+  if (vnIn->loneDescend() == (PcodeOp *)0) return 0;
+  PcodeOp *compop = vnIn->getDef();
   PcodeOp *newneg1,*newneg2;
   Varnode *newout1,*newout2;
   OpCode opc;
@@ -5457,6 +5459,13 @@ int4 RuleBoolNegate::applyOp(PcodeOp *op,Funcdata &data)
   vn = op->getIn(0);
   if (!vn->isWritten()) return 0;
   flip_op = vn->getDef();
+  if (flip_op->code() == CPUI_BOOL_NEGATE) {
+    Varnode *subvn = flip_op->getIn(0);
+    if (subvn->isFree()) return 0;
+    data.opSetInput(op,subvn,0);
+    data.opSetOpcode(op,CPUI_COPY);
+    return 1;
+  }
 
   list<PcodeOp *>::const_iterator iter;
 
