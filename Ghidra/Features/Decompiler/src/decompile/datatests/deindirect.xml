@@ -16,12 +16,20 @@ c00389d689c79090909090837dec097f
 feffffeb12488b45f8ffd0488d3d1d01
 0000e809feffff90c9c3
 </bytechunk>
+<bytechunk space="ram" offset="0x100800" readonly="true">
+  4883ec10488d7c240ce8420000008b44240c4883c410c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100850" readonly="true">
+  c3
+</bytechunk>
 <bytechunk space="ram" offset="0x10088a" readonly="true">
   4c657373004d6f726500
 </bytechunk>
 <symbol space="ram" offset="0x10071a" name="deindirect"/>
 <symbol space="ram" offset="0x1006ca" name="realfunc"/>
 <symbol space="ram" offset="0x100580" name="puts"/>
+<symbol space="ram" offset="0x100800" name="outparam_caller"/>
+<symbol space="ram" offset="0x100850" name="out_init"/>
 </binaryimage>
 <script>
   <com>parse line extern void deindirect(int4 a,int4 b,int4 c);</com>
@@ -29,8 +37,14 @@ feffffeb12488b45f8ffd0488d3d1d01
   <com>lo fu deindirect</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>parse line extern int4 outparam_caller(void);</com>
+  <com>parse line extern void out_init(int4 *p);</com>
+  <com>lo fu outparam_caller</com>
+  <com>decompile</com>
+  <com>print raw</com>
   <com>quit</com>
 </script>
 <stringmatch name="Deindirect #1" min="0" max="0">Exceeded maximum restarts</stringmatch>
 <stringmatch name="Deindirect #2" min="2" max="2">realfunc\(b \+ 3,c \+ 5\)</stringmatch>
+<stringmatch name="Deindirect #3" min="1" max="1">EAX\(.*\) = s0xfffffffffffffffc:4\(0x00100809:</stringmatch>
 </decompilertest>

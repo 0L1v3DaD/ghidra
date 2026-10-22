@@ -2295,8 +2295,43 @@ void BlockBasic::insert(list<PcodeOp *>::iterator iter,PcodeOp *inst)
   }
   else
     ordafter = (*iter)->getSeqNum().getOrder();
-  if (ordafter-ordbefore<=1)
-    setOrder();
+  if (ordafter-ordbefore<=1) {
+    list<PcodeOp *>::iterator siter = newiter;
+    list<PcodeOp *>::iterator eiter = iter;
+    for(uint4 k=0;k<64 && siter!=op.begin();++k)
+      --siter;
+    for(uint4 k=0;k<64 && eiter!=op.end();++k)
+      ++eiter;
+    uintm low;
+    if (siter == op.begin()) {
+      low = 2;
+    }
+    else {
+      low = (*siter)->getSeqNum().getOrder();
+      ++siter;
+    }
+    uintm high;
+    if (eiter == op.end()) {
+      high = ~((uintm)0);
+    }
+    else {
+      high = (*eiter)->getSeqNum().getOrder();
+    }
+    uintm count = 0;
+    for(list<PcodeOp *>::iterator ti=siter;ti!=eiter;++ti)
+      ++count;
+    if (high > low && (high - low) > count + 1) {
+      uintm step = (high - low) / (count + 1);
+      uintm cur = low;
+      for(list<PcodeOp *>::iterator ti=siter;ti!=eiter;++ti) {
+	cur += step;
+	(*ti)->setOrder(cur);
+      }
+    }
+    else {
+      setOrder();
+    }
+  }
   else
     inst->setOrder( ordafter/2 + ordbefore/2 ); // Beware overflow
 
