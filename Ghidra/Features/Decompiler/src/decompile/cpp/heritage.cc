@@ -1446,16 +1446,53 @@ void Heritage::guardCalls(uint4 fl,const Address &addr,int4 size,vector<Varnode 
 {
   FuncCallSpecs *fc;
   PcodeOp *indop;
-  uint4 effecttype;
+  int4 numCalls = fd->numCalls();
+  if (numCalls == 0) return;
 
   bool holdind = ((fl&Varnode::addrtied)!=0);
-  for(int4 i=0;i<fd->numCalls();++i) {
+  AddrSpace *spc = addr.getSpace();
+  bool singleBlockStack = (spc->getType() == IPTR_SPACEBASE &&
+			   fd->getBasicBlocks().getSize() == 1 &&
+			   loadGuard.empty() && storeGuard.empty() &&
+			   fd->beginOp(CPUI_STORE) == fd->endOp(CPUI_STORE) &&
+			   !fd->getOverride().hasDeadcodeDelay(spc) &&
+			   !(fd->getActiveOutput() != (ParamActive *)0 &&
+			     fd->getFuncProto().characterizeAsOutput(addr,size) != ParamEntry::no_containment));
+  uintm minWriteOrder = ~((uintm)0);
+  uintm maxWriteOrder = 0;
+  uintm minReadOrder = ~((uintm)0);
+  uintm maxReadOrder = 0;
+  if (singleBlockStack) {
+    for(int4 w=0;w<write.size();++w) {
+      PcodeOp *wop = write[w]->getDef();
+      if (wop != (PcodeOp *)0) {
+	uintm ord = wop->getSeqNum().getOrder();
+	if (ord < minWriteOrder) minWriteOrder = ord;
+	if (ord > maxWriteOrder) maxWriteOrder = ord;
+      }
+    }
+    VarnodeLocSet::const_iterator viter = fd->beginLoc(size, addr);
+    VarnodeLocSet::const_iterator vend = fd->endLoc(size, addr);
+    while (viter != vend) {
+      Varnode *vn = *viter++;
+      if (!vn->isActiveHeritage() || vn->isWritten()) continue;
+      list<PcodeOp *>::const_iterator oiter = vn->beginDescend();
+      if (oiter != vn->endDescend()) {
+	uintm ord = (*oiter)->getSeqNum().getOrder();
+	if (ord < minReadOrder) minReadOrder = ord;
+	if (ord > maxReadOrder) maxReadOrder = ord;
+      }
+    }
+  }
+
+  vector<uint4> effectlist(numCalls, EffectRecord::unaffected);
+  vector<uint1> possibleoutlist(numCalls, 0);
+  for(int4 i=0;i<numCalls;++i) {
     fc = fd->getCallSpecs(i);
     if (fc->getOp()->isAssignment()) {
       Varnode *vn = fc->getOp()->getOut();
       if ((vn->getAddr()==addr)&&(vn->getSize()==size)) continue;
     }
-    AddrSpace *spc = addr.getSpace();
     uintb off = addr.getOffset();
     bool tryregister = true;
     if (spc->getType() == IPTR_SPACEBASE) {
@@ -1465,7 +1502,7 @@ void Heritage::guardCalls(uint4 fl,const Address &addr,int4 size,vector<Varnode 
 	  tryregister = false; // Do not attempt to register this stack loc as a trial
     }
     Address transAddr(spc,off);	// Address relative to callee's stack
-    effecttype = fc->hasEffect(transAddr,size);
+    uint4 effecttype = fc->hasEffect(transAddr,size);
     bool possibleoutput = false;
     if (fc->isOutputActive() && tryregister) {
       ParamActive *active = fc->getActiveOutput();
@@ -1503,10 +1540,62 @@ void Heritage::guardCalls(uint4 fl,const Address &addr,int4 size,vector<Varnode 
 	  Varnode *vn = fd->newVarnode(size,addr);
 	  vn->setActiveHeritage();
 	  fd->opInsertInput(op,vn,op->numInput());
+	  if (singleBlockStack) {
+	    uintm ord = op->getSeqNum().getOrder();
+	    if (ord < minReadOrder) minReadOrder = ord;
+	    if (ord > maxReadOrder) maxReadOrder = ord;
+	  }
 	}
       }
-      else if (inputCharacter == ParamEntry::contained_by)	// Call may be using part of this range as an input parameter
+      else if (inputCharacter == ParamEntry::contained_by) {	// Call may be using part of this range as an input parameter
+	int4 prevInputs = fc->getOp()->numInput();
 	guardCallOverlappingInput(fc, addr, transAddr, size);
+	if (singleBlockStack && fc->getOp()->numInput() > prevInputs) {
+	  uintm ord = fc->getOp()->getSeqNum().getOrder();
+	  if (ord < minReadOrder) minReadOrder = ord;
+	  if (ord > maxReadOrder) maxReadOrder = ord;
+	}
+      }
+    }
+    if (singleBlockStack && possibleoutput) {
+      uintm ord = fc->getOp()->getSeqNum().getOrder();
+      if (ord < minWriteOrder) minWriteOrder = ord;
+      if (ord > maxWriteOrder) maxWriteOrder = ord;
+    }
+    effectlist[i] = effecttype;
+    possibleoutlist[i] = possibleoutput ? 1 : 0;
+  }
+
+  bool hasAnyWrite = (minWriteOrder != ~((uintm)0));
+  bool hasAnyRead = (minReadOrder != ~((uintm)0));
+  bool firstAccessIsWrite = (hasAnyWrite && minWriteOrder < minReadOrder);
+  uintm maxNeedOrder = maxReadOrder;
+  if (singleBlockStack && hasAnyWrite) {
+    uintm firstCallAfterMaxWrite = ~((uintm)0);
+    for(int4 i=0;i<numCalls;++i) {
+      uintm cOrd = fd->getCallSpecs(i)->getOp()->getSeqNum().getOrder();
+      if (cOrd > maxWriteOrder && cOrd < firstCallAfterMaxWrite)
+	firstCallAfterMaxWrite = cOrd;
+    }
+    if (firstCallAfterMaxWrite != ~((uintm)0) && firstCallAfterMaxWrite > maxNeedOrder)
+      maxNeedOrder = firstCallAfterMaxWrite;
+  }
+
+  bool prunedAny = false;
+  for(int4 i=0;i<numCalls;++i) {
+    uint4 effecttype = effectlist[i];
+    bool possibleoutput = (possibleoutlist[i] != 0);
+    fc = fd->getCallSpecs(i);
+    if (singleBlockStack && !possibleoutput && effecttype != EffectRecord::return_address) {
+      if (!hasAnyWrite && !hasAnyRead) {
+	prunedAny = true;
+	continue;
+      }
+      uintm cOrd = fc->getOp()->getSeqNum().getOrder();
+      if ((firstAccessIsWrite && cOrd < minWriteOrder) || cOrd > maxNeedOrder) {
+	prunedAny = true;
+	continue;
+      }
     }
     // We do not guard the call if the effect is "unaffected" or "reload"
     if ((effecttype == EffectRecord::unknown_effect)||(effecttype == EffectRecord::return_address)) {
@@ -1525,6 +1614,8 @@ void Heritage::guardCalls(uint4 fl,const Address &addr,int4 size,vector<Varnode 
       write.push_back(indop->getOut());
     }
   }
+  if (prunedAny)
+    fd->seenDeadcode(spc);
 }
 
 /// \brief Guard STORE ops in preparation for the renaming algorithm
