@@ -1,7 +1,7 @@
 <decompilertest>
 <!--
   Example of AARCH64 ccmp instruction. The boolean expression needs to be pulled
-  out of the conditional block.
+  out of the conditional block, plus a chained boolean-negation DAG test (#9292).
 -->
 <binaryimage arch="AARCH64:LE:64:v8A:default">
 <bytechunk space="ram" offset="0x42caec" readonly="true">
@@ -9,12 +9,30 @@
 f30300aa600640391ff00071800a497a
 4c000054a1320394c0035fd6
 </bytechunk>
+<bytechunk space="ram" offset="0x42cc00" readonly="true">
+1f00016be0d79f1ae1b79f1a5f00036be2d79f1ae3b79f1a
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+0800010a080100520900022a290100522001080a00000052
+c0035fd6
+</bytechunk>
 <symbol space="ram" offset="0x42caec" name="ccmp"/>
 <symbol space="ram" offset="0x4f9588" name="otherfunc"/>
+<symbol space="ram" offset="0x42cc00" name="ccmp_chain"/>
 </binaryimage>
 <script>
   <com>parse line extern void ccmp(uint1 *ptr,int4 val);</com>
   <com>lo fu ccmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ccmp_chain</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -23,4 +41,6 @@ f30300aa600640391ff00071800a497a
 <stringmatch name="Ccmp test #2" min="1" max="1">if</stringmatch>
 <stringmatch name="Ccmp test #3" min="0" max="0">SBORROW</stringmatch>
 <stringmatch name="Ccmp test #4" min="0" max="0">false</stringmatch>
+<stringmatch name="Ccmp chain #1" min="8" max="8">bVar3 = \(bVar3 \|\| bVar2\) \|\| bVar3 &amp;&amp; bVar1;</stringmatch>
+<stringmatch name="Ccmp chain #2" min="1" max="1">return \(bVar3 \|\| bVar2\) \|\| bVar3 &amp;&amp; bVar1;</stringmatch>
 </decompilertest>
