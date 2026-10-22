@@ -256,6 +256,24 @@ public class SymZ3PcodeEmulatorTest extends AbstractGhidraHeadlessIntegrationTes
 	}
 
 	@Test
+	public void testIntSCarryAndSBorrowUnderflow() throws Exception {
+		try (Context ctx = new Context()) {
+			SymValueZ3 min8 = new SymValueZ3(ctx, ctx.mkBV(-128, 8));
+			SymValueZ3 neg1 = new SymValueZ3(ctx, ctx.mkBV(-1, 8));
+			SymValueZ3 pos1 = new SymValueZ3(ctx, ctx.mkBV(1, 8));
+			SymValueZ3 max8 = new SymValueZ3(ctx, ctx.mkBV(127, 8));
+
+			assertEquals("1", min8.intSCarry(ctx, neg1).getBitVecExpr(ctx).simplify().toString());
+			assertEquals("1", max8.intSCarry(ctx, pos1).getBitVecExpr(ctx).simplify().toString());
+			assertEquals("0", min8.intSCarry(ctx, pos1).getBitVecExpr(ctx).simplify().toString());
+
+			assertEquals("1", min8.intSBorrow(ctx, pos1).getBitVecExpr(ctx).simplify().toString());
+			assertEquals("1", max8.intSBorrow(ctx, neg1).getBitVecExpr(ctx).simplify().toString());
+			assertEquals("0", min8.intSBorrow(ctx, neg1).getBitVecExpr(ctx).simplify().toString());
+		}
+	}
+
+	@Test
 	public void testSimpleMemory() throws Exception {
 		emulator = new LinuxAmd64SymZ3PcodeEmulator();
 		String[] instructions = new String[] {

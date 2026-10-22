@@ -299,7 +299,11 @@ public class SymValueZ3 {
 	}
 
 	private static BoolExpr scarry(Context ctx, BitVecExpr l, BitVecExpr r) {
-		return ctx.mkBVAddNoOverflow(l, r, true);
+		return ctx.mkAnd(ctx.mkBVAddNoOverflow(l, r, true), ctx.mkBVAddNoUnderflow(l, r));
+	}
+
+	private static BoolExpr sborrow(Context ctx, BitVecExpr l, BitVecExpr r) {
+		return ctx.mkAnd(ctx.mkBVSubNoOverflow(l, r), ctx.mkBVSubNoUnderflow(l, r, true));
 	}
 
 	public SymValueZ3 intSCarry(Context ctx, SymValueZ3 that) {
@@ -307,7 +311,7 @@ public class SymValueZ3 {
 	}
 
 	public SymValueZ3 intSBorrow(Context ctx, SymValueZ3 that) {
-		return iteInv(ctx, this, Context::mkBVSubNoOverflow, that);
+		return iteInv(ctx, this, SymValueZ3::sborrow, that);
 	}
 
 	public SymValueZ3 intXor(Context ctx, SymValueZ3 that) {
