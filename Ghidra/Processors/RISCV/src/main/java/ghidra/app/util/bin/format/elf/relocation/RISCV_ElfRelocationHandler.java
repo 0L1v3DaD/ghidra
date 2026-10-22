@@ -476,14 +476,18 @@ public class RISCV_ElfRelocationHandler
 
 			case R_RISCV_SET16:
 				value16 = (short) (symbolValue + addend);
-				memory.setShort(relocationAddress, value8);
+				memory.setShort(relocationAddress, value16);
 				byteLength = 2;
 				break;
 
 			case R_RISCV_32_PCREL:
+				value32 = (int) (symbolValue + addend - offset);
+				memory.setInt(relocationAddress, value32);
+				break;
+
 			case R_RISCV_SET32:
 				value32 = (int) (symbolValue + addend);
-				memory.setInt(relocationAddress, value8);
+				memory.setInt(relocationAddress, value32);
 				break;
 
 			default:
