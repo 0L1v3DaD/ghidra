@@ -828,7 +828,7 @@ bool Varnode::isConstantExtended(uint8 *val) const
   }
   else if (opc == CPUI_PIECE) {
     Varnode *vnlo = def->getIn(1);
-    if (vnlo->isConstant()) {
+    if (vnlo->isConstant() && vnlo->getSize() > 0 && vnlo->getSize() <= 8) {
       val[0] = vnlo->getOffset();
       Varnode *vnhi = def->getIn(0);
       if (vnhi->isConstant()) {
@@ -1014,8 +1014,8 @@ bool Varnode::findSubpieceShadow(int4 leastByte,const Varnode *whole,int4 recurs
     if (vn->isConstant()) {
       while( whole->isWritten() && whole->getDef()->code() == CPUI_COPY)
         whole = whole->getDef()->getIn(0);
-      if (!whole->isConstant()) return false;
-      uintb off = whole->getOffset() >> leastByte*8;
+      if (!whole->isConstant() || leastByte < 0) return false;
+      uintb off = (leastByte >= (int4)sizeof(uintb)) ? 0 : (whole->getOffset() >> (leastByte*8));
       off &= calc_mask(vn->getSize());
       return (off == vn->getOffset());
    }
