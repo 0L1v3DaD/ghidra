@@ -1484,7 +1484,7 @@ public interface JitCompiledPassage {
 	 * @param amt the amt as in {@code val >> amt}, in little-endian order
 	 * @return the value
 	 */
-	static long intRight(int val, int[] amt) {
+	static int intRight(int val, int[] amt) {
 		if (Integer.compareUnsigned(amt[0], Integer.SIZE) >= 0) {
 			return 0;
 		}
@@ -1558,6 +1558,62 @@ public interface JitCompiledPassage {
 	}
 
 	/**
+	 * The implementation of {@link PcodeOp#INT_SRIGHT int_sright} on an mp-int with a JVM long
+	 * shift amount.
+	 *
+	 * @param out the array to receive the output, in little-endian order
+	 * @param outBytes the actual size in bytes of the output operand
+	 * @param val the value as in {@code val s>> amt}, in little-endian order
+	 * @param amt the amt as in {@code val s>> amt}
+	 */
+	static void intSRight(int[] out, int outBytes, int[] val, long amt) {
+		int sign = val[val.length - 1] < 0 ? -1 : 0;
+		if (Long.compareUnsigned(amt, (outBytes & MASK_I2UL) * Byte.SIZE) >= 0) {
+			Arrays.fill(out, sign);
+			return;
+		}
+		MpShiftPrivate.sshr(out, val, (int) amt, sign);
+	}
+
+	/**
+	 * The implementation of {@link PcodeOp#INT_SRIGHT int_sright} on an mp-int with a JVM int shift
+	 * amount.
+	 *
+	 * @param out the array to receive the output, in little-endian order
+	 * @param outBytes the actual size in bytes of the output operand
+	 * @param val the value as in {@code val s>> amt}, in little-endian order
+	 * @param amt the amt as in {@code val s>> amt}
+	 */
+	static void intSRight(int[] out, int outBytes, int[] val, int amt) {
+		int sign = val[val.length - 1] < 0 ? -1 : 0;
+		if (Integer.compareUnsigned(amt, outBytes * Byte.SIZE) >= 0) {
+			Arrays.fill(out, sign);
+			return;
+		}
+		MpShiftPrivate.sshr(out, val, amt, sign);
+	}
+
+	/**
+	 * The implementation of {@link PcodeOp#INT_SRIGHT int_sright} on a JVM long with an mp-int
+	 * shift amount.
+	 *
+	 * @param val the value as in {@code val s>> amt}
+	 * @param amt the amt as in {@code val s>> amt}, in little-endian order
+	 * @return the value
+	 */
+	static long intSRight(long val, int[] amt) {
+		if (Long.compareUnsigned(Integer.toUnsignedLong(amt[0]), Long.SIZE) >= 0) {
+			return val >> (Long.SIZE - 1);
+		}
+		for (int i = 1; i < amt.length; i++) {
+			if (amt[i] != 0) {
+				return val >> (Long.SIZE - 1);
+			}
+		}
+		return val >> amt[0];
+	}
+
+	/**
 	 * The implementation of {@link PcodeOp#INT_SRIGHT int_sright} on JVM longs.
 	 * <p>
 	 * The semantics here are subtly different than the JVM's {@link CodeBuilder#ishr ishr}: 1) The
@@ -1618,6 +1674,29 @@ public interface JitCompiledPassage {
 	 * amount must be treated as unsigned. 2) Shifts in excess of val's size fill the register with
 	 * the sign bit.
 	 * 
+	 * @param val the value as in {@code val s>> amt}
+	 * @param amt the amt as in {@code val s>> amt}
+	 * @return the value
+	 */
+	static int intSRight(int val, int[] amt) {
+		if (Integer.compareUnsigned(amt[0], Integer.SIZE) >= 0) {
+			return val >> (Integer.SIZE - 1);
+		}
+		for (int i = 1; i < amt.length; i++) {
+			if (amt[i] != 0) {
+				return val >> (Integer.SIZE - 1);
+			}
+		}
+		return val >> amt[0];
+	}
+
+	/**
+	 * The implementation of {@link PcodeOp#INT_SRIGHT int_sright} on JVM ints.
+	 * <p>
+	 * The semantics here are subtly different than the JVM's {@link CodeBuilder#ishr ishr}: 1) The
+	 * amount must be treated as unsigned. 2) Shifts in excess of val's size fill the register with
+	 * the sign bit.
+	 *
 	 * @param val the value as in {@code val s>> amt}
 	 * @param amt the amt as in {@code val s>> amt}
 	 * @return the value

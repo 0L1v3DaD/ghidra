@@ -119,4 +119,22 @@ public class JitRuntimeLibraryTest {
 		MpDivPrivate.neg(ints, 2);
 		assertMpEquals(intsLE(0x00000000, 0x00010000), ints);
 	}
+
+	@Test
+	public void testMpShiftOverloads() {
+		int r32 = JitCompiledPassage.intRight(0x80000000, intsLE(0, 4));
+		assertEquals(0x08000000, r32);
+		assertEquals(0, JitCompiledPassage.intRight(0x80000000, intsLE(1, 0)));
+
+		assertEquals(0xf8000000, JitCompiledPassage.intSRight(0x80000000, intsLE(0, 4)));
+		assertEquals(-1, JitCompiledPassage.intSRight(0x80000000, intsLE(1, 0)));
+		assertEquals(0xf800000000000000L,
+			JitCompiledPassage.intSRight(0x8000000000000000L, intsLE(0, 4)));
+		assertEquals(-1L, JitCompiledPassage.intSRight(0x8000000000000000L, intsLE(1, 0)));
+
+		assertMpEquals(intsLE(0xff800000, 0x00000000),
+			out(2, o -> JitCompiledPassage.intSRight(o, 8, intsLE(0x80000000, 0x00000000), 8L)));
+		assertMpEquals(intsLE(0xffffffff, 0xffffffff),
+			out(2, o -> JitCompiledPassage.intSRight(o, 8, intsLE(0x80000000, 0x00000000), 64)));
+	}
 }
