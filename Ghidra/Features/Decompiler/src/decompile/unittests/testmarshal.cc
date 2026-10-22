@@ -174,6 +174,10 @@ void test_unsigned_attributes(ostringstream &outStream,Encoder &encoder,Decoder 
   ASSERT_EQUALS(val, 0x7fffffffffffffff);
   val = decoder.readUnsignedInteger(ATTRIB_MODEL);
   ASSERT_EQUALS(val, 0x8000000000000000);
+  val = decoder.readUnsignedInteger(ATTRIB_CONSTRUCTOR);
+  ASSERT_EQUALS(val, 0x1fffff);
+  val = decoder.readUnsignedInteger(ATTRIB_CONSTRUCTOR);
+  ASSERT_EQUALS(val, 0x1fffff);
   decoder.closeElement(el);
 }
 

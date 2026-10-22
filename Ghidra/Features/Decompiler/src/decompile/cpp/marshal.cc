@@ -647,6 +647,15 @@ uint8 PackedDecode::readInteger(int4 len)
 
 {
   uint8 res = 0;
+  if (curPos.end - curPos.current > len) {
+    uint1 *ptr = curPos.current;
+    while(len > 0) {
+      res = (res << RAWDATA_BITSPERBYTE) | (*ptr++ & RAWDATA_MASK);
+      len -= 1;
+    }
+    curPos.current = ptr;
+    return res;
+  }
   while(len > 0) {
     res <<= RAWDATA_BITSPERBYTE;
     res |= (getNextByte(curPos) & RAWDATA_MASK);
@@ -655,16 +664,29 @@ uint8 PackedDecode::readInteger(int4 len)
   return res;
 }
 
-/// The \e current position is reset to the start of the current open element. Attributes are scanned
-/// and skipped until the attribute matching the given id is found.  The \e current position is set to the
+/// Attributes are scanned starting from lookupPos (wrapping around to startPos if needed)
+/// until the attribute matching the given id is found.  The \e current position is set to the
 /// start of the matching attribute, in preparation for one of the read*() methods.
 /// If the id is not found an exception is thrown.
 /// \param attribId is the attribute id to scan for.
 void PackedDecode::findMatchingAttribute(const AttributeId &attribId)
 
 {
-  curPos = startPos;
+  curPos = lookupPos;
   for(;;) {
+    uint1 header1 = getByte(curPos);
+    if ((header1 & HEADER_MASK) != ATTRIBUTE) break;
+    uint4 id = header1 & ELEMENTID_MASK;
+    if ((header1 & HEADEREXTEND_MASK) != 0) {
+      id <<= RAWDATA_BITSPERBYTE;
+      id |= (getBytePlus1(curPos) & RAWDATA_MASK);
+    }
+    if (attribId.getId() == id)
+      return;		// Found it
+    skipAttribute();
+  }
+  curPos = startPos;
+  while(curPos.current != lookupPos.current || curPos.seqIter != lookupPos.seqIter) {
     uint1 header1 = getByte(curPos);
     if ((header1 & HEADER_MASK) != ATTRIBUTE) break;
     uint4 id = header1 & ELEMENTID_MASK;
@@ -794,6 +816,7 @@ uint4 PackedDecode::openElement(void)
   }
   endPos = curPos;
   curPos = startPos;
+  lookupPos = startPos;
   attributeRead = true;		// "Last attribute was read" is vacuously true
   return id;
 }
@@ -848,6 +871,7 @@ void PackedDecode::rewindAttributes(void)
 
 {
   curPos = startPos;
+  lookupPos = startPos;
   attributeRead = true;
 }
 
@@ -892,6 +916,7 @@ bool PackedDecode::readBool(const AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   bool res = readBool();
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -926,6 +951,7 @@ intb PackedDecode::readSignedInteger(const AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   intb res = readSignedInteger();
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -960,6 +986,7 @@ intb PackedDecode::readSignedIntegerExpectString(const AttributeId &attribId,con
 {
   findMatchingAttribute(attribId);
   intb res = readSignedIntegerExpectString(expect,expectval);
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -990,6 +1017,7 @@ uintb PackedDecode::readUnsignedInteger(const AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   uintb res = readUnsignedInteger();
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -1035,6 +1063,7 @@ string PackedDecode::readString(const AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   string res = readString();
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -1082,6 +1111,7 @@ AddrSpace *PackedDecode::readSpace(const AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   AddrSpace *res = readSpace();
+  lookupPos = curPos;
   curPos = startPos;
   return res;
 }
@@ -1100,6 +1130,7 @@ OpCode PackedDecode::readOpcode(AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   OpCode opc = readOpcode();
+  lookupPos = curPos;
   curPos = startPos;
   return opc;
 }
@@ -1118,6 +1149,7 @@ type_metatype PackedDecode::readDatatypeMeta(AttributeId &attribId)
 {
   findMatchingAttribute(attribId);
   type_metatype metatype = readDatatypeMeta();
+  lookupPos = curPos;
   curPos = startPos;
   return metatype;
 }
