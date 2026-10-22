@@ -1563,10 +1563,11 @@ void ActionFuncLink::funcLinkInput(FuncCallSpecs *fc,Funcdata &data)
     for(int4 i=0;i<numparam;++i) {
       ProtoParameter *param = fc->getParam(i);
       if (!param->hasStorage()) continue;
+      int4 trialpos = active->getNumTrials();
       active->registerTrial(param->getAddress(),param->getSize());
-      active->getTrial(i).markActive(); // Parameter is not optional
+      active->getTrial(trialpos).markActive(); // Parameter is not optional
       if (varargs){
-    	  active->getTrial(i).setFixedPosition(i);
+	active->getTrial(trialpos).setFixedPosition(i);
       }
       AddrSpace *spc = param->getAddress().getSpace();
       uintb off = param->getAddress().getOffset();
