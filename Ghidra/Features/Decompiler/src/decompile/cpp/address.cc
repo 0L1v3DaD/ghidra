@@ -1021,10 +1021,12 @@ uintb sign_extend(uintb in,int4 sizein,int4 sizeout)
 uintb extend_signbit(uintb val,int4 numbits,int4 size)
 
 {
-  if (numbits < size * 8) {
-    int4 sa = 8*sizeof(intb) - numbits;
-    intb sval = val;
-    val = (sval << sa) >> sa;
+  if (numbits <= 0 || size <= 0)
+    return 0;
+  if (numbits < size * 8 && numbits < (int4)(8*sizeof(uintb))) {
+    int4 sa = 8*sizeof(uintb) - numbits;
+    intb sval = (intb)(val << sa);
+    val = (uintb)(sval >> sa);
     val &= calc_mask(size);
   }
   return val;
@@ -1070,6 +1072,9 @@ int4 leastsigbit_set(uintb val)
 
 {
   if (val==0) return -1;
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(UINTB4)
+  return __builtin_ctzll(val);
+#else
   int4 res = 0;
   int4 sz = 4*sizeof(uintb);
   uintb mask = ~((uintb)0);
@@ -1082,6 +1087,7 @@ int4 leastsigbit_set(uintb val)
     sz >>= 1;
   } while(sz!=0);
   return res;
+#endif
 }
 
 /// The least significant bit is index 0.
@@ -1091,6 +1097,9 @@ int4 mostsigbit_set(uintb val)
 
 {
   if (val==0) return -1;
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(UINTB4)
+  return (int4)(8*sizeof(uintb) - 1) - __builtin_clzll(val);
+#else
   int4 res = 8*sizeof(uintb)-1;
   int4 sz = 4*sizeof(uintb);
   uintb mask = ~((uintb)0);
@@ -1103,6 +1112,7 @@ int4 mostsigbit_set(uintb val)
     sz >>= 1;
   } while(sz != 0);
   return res;
+#endif
 }
 
 /// Count the number (population) bits set.
@@ -1111,6 +1121,9 @@ int4 mostsigbit_set(uintb val)
 int4 popcount(uintb val)
 
 {
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(UINTB4)
+  return __builtin_popcountll(val);
+#else
   val = (val & 0x5555555555555555L) + ((val >> 1) & 0x5555555555555555L);
   val = (val & 0x3333333333333333L) + ((val >> 2) & 0x3333333333333333L);
   val = (val & 0x0f0f0f0f0f0f0f0fL) + ((val >> 4) & 0x0f0f0f0f0f0f0f0fL);
@@ -1119,6 +1132,7 @@ int4 popcount(uintb val)
   int4 res = (int4)(val & 0xff);
   res += (int4)((val >> 32) & 0xff);
   return res;
+#endif
 }
 
 /// Count the number of more significant zero bits before the most significant
@@ -1130,6 +1144,9 @@ int4 count_leading_zeros(uintb val)
 {
   if (val == 0)
     return 8*sizeof(uintb);
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(UINTB4)
+  return __builtin_clzll(val);
+#else
   uintb mask = ~((uintb)0);
   int4 maskSize = 4*sizeof(uintb);
   mask &= (mask << maskSize);
@@ -1147,6 +1164,7 @@ int4 count_leading_zeros(uintb val)
     }
   } while(maskSize != 0);
   return bit;
+#endif
 }
 
 /// Return smallest number of form 2^n-1, bigger or equal to the given value
@@ -1155,6 +1173,10 @@ int4 count_leading_zeros(uintb val)
 uintb coveringmask(uintb val)
 
 {
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(UINTB4)
+  if (val == 0) return 0;
+  return (~((uintb)0)) >> __builtin_clzll(val);
+#else
   uintb res = val;
   int4 sz = 1;
   while(sz < 8*sizeof(uintb)) {
@@ -1162,6 +1184,7 @@ uintb coveringmask(uintb val)
     sz <<= 1;
   }
   return res;
+#endif
 }
 
 /// Treat \b val as a constant of size \b sz.
@@ -1173,18 +1196,10 @@ uintb coveringmask(uintb val)
 int4 bit_transitions(uintb val,int4 sz)
 
 {
-  int4 res = 0;
-  int4 last = val & 1;
-  int4 cur;
-  for(int4 i=1;i<8*sz;++i) {
-    val >>= 1;
-    cur = val & 1;
-    if (cur != last) {
-      res += 1;
-      last = cur;
-    }
-    if (val==0) break;
-  }
+  if (sz <= 0) return 0;
+  int4 res = popcount((val ^ (val >> 1)) & (calc_mask(sz) >> 1));
+  if (sz > (int4)sizeof(uintb) && ((val >> (8*sizeof(uintb)-1)) & 1) != 0)
+    res += 1;
   return res;
 }
 

@@ -952,4 +952,24 @@ TEST(circlerange_pushsright2) {
   ASSERT(CircleRangeTest::testPushBinary(0xfff0,0x24,4,3,4,1,2,CPUI_INT_SRIGHT,2));
 }
 
+
+TEST(bit_primitives_and_extend_signbit) {
+  ASSERT_EQUALS(extend_signbit(0x80, 0, 1), (uintb)0);
+  ASSERT_EQUALS(extend_signbit(0x80, 8, 0), (uintb)0);
+  ASSERT_EQUALS(extend_signbit(0x80, 64, 8), (uintb)0x80);
+  ASSERT_EQUALS(extend_signbit(0x80, 8, 2), (uintb)0xff80);
+  ASSERT_EQUALS(extend_signbit(0x40, 7, 2), (uintb)0xffc0);
+  ASSERT_EQUALS(bit_transitions(0, 0), 0);
+  ASSERT_EQUALS(bit_transitions(0xaa, 1), 7);
+  ASSERT_EQUALS(bit_transitions(0xffffffffffffffffULL, 8), 0);
+  ASSERT_EQUALS(bit_transitions(0xffffffffffffffffULL, 16), 1);
+  ASSERT_EQUALS(leastsigbit_set(0), -1);
+  ASSERT_EQUALS(leastsigbit_set(0x8000000000000000ULL), 63);
+  ASSERT_EQUALS(mostsigbit_set(0), -1);
+  ASSERT_EQUALS(mostsigbit_set(0x8000000000000000ULL), 63);
+  ASSERT_EQUALS(popcount(0xf0f0f0f0f0f0f0f0ULL), 32);
+  ASSERT_EQUALS(coveringmask(0), (uintb)0);
+  ASSERT_EQUALS(coveringmask(0x8000000000000000ULL), (uintb)0xffffffffffffffffULL);
+}
+
 } // End namespace ghidra
