@@ -17,13 +17,17 @@ package ghidra.app.cmd.function;
 
 import static org.junit.Assert.*;
 
+import java.util.List;
+
 import org.junit.Before;
 import org.junit.Test;
 
 import generic.test.AbstractGenericTest;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.model.address.*;
+import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
+import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.SourceType;
 
 /**
@@ -269,6 +273,56 @@ public class CreateFunctionCmdTest extends AbstractGenericTest {
 			func1007.getBody().getNumAddresses());
 
 		program.endTransaction(transactionID, true);
+	}
+
+	@Test
+	public void testApplyFunctionDataTypesOverloadConflict() throws Exception {
+		int transactionID = program.startTransaction("testOverloadConflict");
+		try {
+			Namespace ns1 = program.getSymbolTable()
+					.createNameSpace(null, "NS1", SourceType.USER_DEFINED);
+			Namespace ns2 = program.getSymbolTable()
+					.createNameSpace(null, "NS2", SourceType.USER_DEFINED);
+
+			CreateFunctionCmd cmd1 = new CreateFunctionCmd("move", addr(0x1000),
+				new AddressSet(addr(0x1000), addr(0x1005)), SourceType.USER_DEFINED);
+			cmd1.applyTo(program);
+			Function f1 = func(addr(0x1000));
+			f1.setParentNamespace(ns1);
+
+			CreateFunctionCmd cmd2 = new CreateFunctionCmd("move", addr(0x1010),
+				new AddressSet(addr(0x1010), addr(0x1015)), SourceType.USER_DEFINED);
+			cmd2.applyTo(program);
+			Function f2 = func(addr(0x1010));
+			f2.setParentNamespace(ns2);
+
+			DataTypeManager dtm = program.getDataTypeManager();
+			FunctionDefinitionDataType fdef1 =
+				new FunctionDefinitionDataType(new CategoryPath("/DWARF"), "move", dtm);
+			fdef1.setArguments(new ParameterDefinition[] {
+				new ParameterDefinitionImpl("a", IntegerDataType.dataType, null) });
+			FunctionDefinitionDataType fdef2 =
+				new FunctionDefinitionDataType(new CategoryPath("/DWARF"), "move", dtm);
+			fdef2.setArguments(new ParameterDefinition[] {
+				new ParameterDefinitionImpl("a", IntegerDataType.dataType, null),
+				new ParameterDefinitionImpl("b", IntegerDataType.dataType, null) });
+
+			DataType resolved1 = dtm.addDataType(fdef1, DataTypeConflictHandler.DEFAULT_HANDLER);
+			DataType resolved2 = dtm.addDataType(fdef2, DataTypeConflictHandler.DEFAULT_HANDLER);
+			assertEquals("move", resolved1.getName());
+			assertEquals("move.conflict", resolved2.getName());
+
+			ApplyFunctionDataTypesCmd applyCmd = new ApplyFunctionDataTypesCmd(
+				List.of(dtm), new AddressSet(addr(0x1000), addr(0x1020)),
+				SourceType.USER_DEFINED, true, false);
+			applyCmd.applyTo(program);
+
+			assertEquals(0, f1.getParameterCount());
+			assertEquals(0, f2.getParameterCount());
+		}
+		finally {
+			program.endTransaction(transactionID, false);
+		}
 	}
 
 	private Address addr(long l) {
