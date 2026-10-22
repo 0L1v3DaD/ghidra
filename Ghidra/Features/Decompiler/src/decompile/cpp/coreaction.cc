@@ -3913,6 +3913,8 @@ void ActionDeadCode::propagateConsumed(vector<Varnode *> &worklist)
 	  a = a & ~mask;	// Make sure high bits that are left shifted out are not marked consumed
 	}
       }
+      else if (sa >= 8*sizeof(uintb))
+	a = 0;
       else
 	a = outc >> sa;		// Most cases just do this
       b = (outc == 0) ? 0 : ~((uintb)0);
@@ -3932,6 +3934,12 @@ void ActionDeadCode::propagateConsumed(vector<Varnode *> &worklist)
 	a = 0;			// We know nothing about the low order consumption of the input bits
       else
 	a = outc << sa;		// Most cases just do this
+      if ((a==0)&&(outc!=0)&&(op->getIn(0)->getSize() > sizeof(uintb))) {
+	// If the consumed mask is zero because it isn't big enough to cover the whole varnode
+	// and there are still upper bits that are consumed, mark the top bit consumed
+	a = ~((uintb)0);
+	a = a ^ (a >> 1);
+      }
       b = (outc == 0) ? 0 : ~((uintb)0);
       pushConsumed(a,op->getIn(0),worklist);
       pushConsumed(b,op->getIn(1),worklist);
@@ -3954,11 +3962,11 @@ void ActionDeadCode::propagateConsumed(vector<Varnode *> &worklist)
     pushConsumed(a,op->getIn(1),worklist);
     break;
   case CPUI_INSERT:
-    a = 1;
-    a <<= (int4)op->getIn(3)->getOffset();
-    a -= 1;	// Insert mask
+    sz = (int4)op->getIn(3)->getOffset();
+    a = (sz >= 8*sizeof(uintb)) ? ~((uintb)0) : (((uintb)1 << sz) - 1);	// Insert mask
     pushConsumed(a,op->getIn(1),worklist);
-    a <<= (int4)op->getIn(2)->getOffset();
+    sz = (int4)op->getIn(2)->getOffset();
+    a = (sz >= 8*sizeof(uintb)) ? 0 : (a << sz);
     pushConsumed(outc & ~a, op->getIn(0), worklist);
     b = (outc == 0) ? 0 : ~((uintb)0);
     pushConsumed(b,op->getIn(2), worklist);
@@ -3966,11 +3974,11 @@ void ActionDeadCode::propagateConsumed(vector<Varnode *> &worklist)
     break;
   case CPUI_ZPULL:
   case CPUI_SPULL:
-    a = 1;
-    a <<= (int4)op->getIn(2)->getOffset();
-    a -= 1;	// Pull mask
+    sz = (int4)op->getIn(2)->getOffset();
+    a = (sz >= 8*sizeof(uintb)) ? ~((uintb)0) : (((uintb)1 << sz) - 1);	// Pull mask
     a &= outc;	// Consumed bits of mask
-    a <<= (int4)op->getIn(1)->getOffset();
+    sz = (int4)op->getIn(1)->getOffset();
+    a = (sz >= 8*sizeof(uintb)) ? 0 : (a << sz);
     pushConsumed(a,op->getIn(0),worklist);
     b = (outc == 0) ? 0 : ~((uintb)0);
     pushConsumed(b,op->getIn(1), worklist);
