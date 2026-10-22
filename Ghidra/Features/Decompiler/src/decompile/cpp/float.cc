@@ -652,7 +652,13 @@ uintb FloatFormat::opTrunc(uintb a,int4 sizeout) const
 {
   floatclass type;
   double val = getHostFloat(a,&type);
-  intb ival = (intb) val;	// Convert to integer
+  intb ival;
+  if (type == nan || type == infinity)
+    ival = (intb)((uintb)1 << (8 * sizeof(intb) - 1));
+  else if (val >= 9223372036854775808.0 || val < -9223372036854775808.0)
+    ival = (intb)((uintb)1 << (8 * sizeof(intb) - 1));
+  else
+    ival = (intb) val;	// Convert to integer
   uintb res = (uintb) ival;	// Convert to unsigned
   res &= calc_mask(sizeout);	// Truncate to proper size
   return res;
