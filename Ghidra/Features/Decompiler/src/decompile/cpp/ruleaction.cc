@@ -9375,9 +9375,30 @@ int4 RuleConditionalMove::applyOp(PcodeOp *op,Funcdata &data)
   if (op->numInput() != 2) return 0; // MULTIEQUAL must have exactly 2 inputs
 
   Varnode *bool0 = checkBoolean(op->getIn(0));
-  if (bool0 == (Varnode *)0) return 0;
-  Varnode *bool1 = checkBoolean(op->getIn(1));
-  if (bool1 == (Varnode *)0) return 0;
+  Varnode *bool1 = (bool0 != (Varnode *)0) ? checkBoolean(op->getIn(1)) : (Varnode *)0;
+  PcodeOp *compOp = (PcodeOp *)0;
+  uintb constBool0 = 0;
+  uintb constBool1 = 0;
+  if (bool0 == (Varnode *)0 || bool1 == (Varnode *)0) {
+    if (op->getOut()->isAddrTied()) return 0;
+    Varnode *in0 = op->getIn(0);
+    Varnode *in1 = op->getIn(1);
+    if (!in0->isWritten() || in0->getDef()->code() != CPUI_COPY || !in0->getDef()->getIn(0)->isConstant()) return 0;
+    if (!in1->isWritten() || in1->getDef()->code() != CPUI_COPY || !in1->getDef()->getIn(0)->isConstant()) return 0;
+    compOp = op->getOut()->loneDescend();
+    if (compOp == (PcodeOp *)0) return 0;
+    OpCode copc = compOp->code();
+    if (copc != CPUI_INT_EQUAL && copc != CPUI_INT_NOTEQUAL) return 0;
+    Varnode *kvn = (compOp->getIn(0) == op->getOut()) ? compOp->getIn(1) : compOp->getIn(0);
+    if (!kvn->isConstant()) return 0;
+    uintb c0 = in0->getDef()->getIn(0)->getOffset();
+    uintb c1 = in1->getDef()->getIn(0)->getOffset();
+    uintb k = kvn->getOffset();
+    constBool0 = (copc == CPUI_INT_EQUAL) ? (c0 == k ? 1 : 0) : (c0 != k ? 1 : 0);
+    constBool1 = (copc == CPUI_INT_EQUAL) ? (c1 == k ? 1 : 0) : (c1 != k ? 1 : 0);
+    bool0 = in0->getDef()->getIn(0);
+    bool1 = in1->getDef()->getIn(0);
+  }
 
   // Look for the situation
   //               inblock0
@@ -9472,16 +9493,23 @@ int4 RuleConditionalMove::applyOp(PcodeOp *op,Funcdata &data)
   data.opUninsert( op );	// Changing from MULTIEQUAL, this should be reinserted
   int4 sz = op->getOut()->getSize();
   if (bool0->isConstant() && bool1->isConstant()) {
-    if (bool0->getOffset() == bool1->getOffset()) {
+    uintb bval0 = (compOp != (PcodeOp *)0) ? constBool0 : bool0->getOffset();
+    uintb bval1 = (compOp != (PcodeOp *)0) ? constBool1 : bool1->getOffset();
+    if (compOp != (PcodeOp *)0) {
+      data.opSetOpcode(compOp, CPUI_INT_NOTEQUAL);
+      data.opSetInput(compOp, op->getOut(), 0);
+      data.opSetInput(compOp, data.newConstant(sz, 0), 1);
+    }
+    if (bval0 == bval1) {
       data.opRemoveInput(op,1);
       data.opSetOpcode(op,CPUI_COPY);
-      data.opSetInput(op, data.newConstant( sz, bool0->getOffset() ), 0 );
+      data.opSetInput(op, data.newConstant( sz, bval0 ), 0 );
       data.opInsertBegin(op,bb);
     }
     else {
       data.opRemoveInput(op,1);
       Varnode *boolvn = cbranch->getIn(1);
-      bool needcomplement = ( (bool0->getOffset()==0) == path0istrue );
+      bool needcomplement = ( (bval0==0) == path0istrue );
       if (sz == 1) {
 	if (needcomplement)
 	  data.opSetOpcode(op,CPUI_BOOL_NEGATE);
